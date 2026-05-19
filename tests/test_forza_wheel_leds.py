@@ -156,17 +156,17 @@ class TestRpmToBitmask(unittest.TestCase):
 class TestSendLedReport(unittest.TestCase):
 
     def test_writes_correct_report(self):
-        dev = MagicMock()
-        fwl._send_led_report(dev, 0x1F)
-        dev.write.assert_called_once_with(
-            [0x00, 0xF8, 0x12, 0x1F, 0x00, 0x00, 0x00, 0x00]
+        mock_hid = MagicMock()
+        fwl._send_led_report(mock_hid, 42, 0x1F)
+        mock_hid.write.assert_called_once_with(
+            42, bytes([0x00, 0xF8, 0x12, 0x1F, 0x00, 0x00, 0x00, 0x00])
         )
 
     def test_bitmask_masked_to_byte(self):
-        dev = MagicMock()
-        fwl._send_led_report(dev, 0x1FF)  # only lowest 8 bits used
-        args = dev.write.call_args[0][0]
-        self.assertEqual(args[3], 0xFF)
+        mock_hid = MagicMock()
+        fwl._send_led_report(mock_hid, 42, 0x1FF)
+        args = mock_hid.write.call_args[0]
+        self.assertEqual(args[1][3], 0xFF)
 
 
 # ---------------------------------------------------------------------------
@@ -175,38 +175,24 @@ class TestSendLedReport(unittest.TestCase):
 
 class TestOpenWheel(unittest.TestCase):
 
-    def test_returns_device_when_first_pid_matches(self):
-        mock_dev = MagicMock()
+    def test_returns_handle_when_first_pid_matches(self):
         mock_hid = MagicMock()
-        mock_hid.device.return_value = mock_dev
+        mock_hid.open.return_value = 99
 
         result = fwl.open_wheel(mock_hid)
-        self.assertIs(result, mock_dev)
-        mock_dev.open.assert_called_once_with(fwl.LOGITECH_VID, fwl.WHEEL_PIDS[0])
-        mock_dev.set_nonblocking.assert_called_once_with(1)
+        self.assertEqual(result, 99)
+        mock_hid.open.assert_called_once_with(fwl.LOGITECH_VID, fwl.WHEEL_PIDS[0])
 
     def test_tries_second_pid_when_first_fails(self):
-        mock_dev = MagicMock()
         mock_hid = MagicMock()
-        call_count = [0]
+        mock_hid.open.side_effect = [OSError("not found"), 88]
 
-        def make_device():
-            d = MagicMock()
-            call_count[0] += 1
-            if call_count[0] == 1:
-                d.open.side_effect = OSError("not found")
-            return d
-
-        mock_hid.device.side_effect = make_device
-        # The second device (G920) should succeed
         result = fwl.open_wheel(mock_hid)
-        self.assertIsNotNone(result)
+        self.assertEqual(result, 88)
 
     def test_returns_none_when_no_wheel_found(self):
         mock_hid = MagicMock()
-        dev = MagicMock()
-        dev.open.side_effect = OSError("not found")
-        mock_hid.device.return_value = dev
+        mock_hid.open.side_effect = OSError("not found")
 
         result = fwl.open_wheel(mock_hid)
         self.assertIsNone(result)
@@ -290,29 +276,28 @@ class TestComputeLedState(unittest.TestCase):
 class TestApplyLedAction(unittest.TestCase):
 
     def test_led_off_sends_all_off(self):
-        dev = MagicMock()
-        fwl.apply_led_action(dev, fwl.LED_OFF, 0, 0, 0)
-        dev.write.assert_called_once()
-        self.assertEqual(dev.write.call_args[0][0][3], fwl.ALL_LEDS_OFF)
+        mock_hid = MagicMock()
+        fwl.apply_led_action(mock_hid, 42, fwl.LED_OFF, 0, 0, 0)
+        mock_hid.write.assert_called_once()
+        self.assertEqual(mock_hid.write.call_args[0][1][3], fwl.ALL_LEDS_OFF)
 
     def test_led_blink_off_sends_all_off(self):
-        dev = MagicMock()
-        fwl.apply_led_action(dev, fwl.LED_BLINK_OFF, 0, 0, 0)
-        dev.write.assert_called_once()
-        self.assertEqual(dev.write.call_args[0][0][3], fwl.ALL_LEDS_OFF)
+        mock_hid = MagicMock()
+        fwl.apply_led_action(mock_hid, 42, fwl.LED_BLINK_OFF, 0, 0, 0)
+        mock_hid.write.assert_called_once()
+        self.assertEqual(mock_hid.write.call_args[0][1][3], fwl.ALL_LEDS_OFF)
 
     def test_led_blink_on_sends_all_on(self):
-        dev = MagicMock()
-        fwl.apply_led_action(dev, fwl.LED_BLINK_ON, 0, 0, 0)
-        dev.write.assert_called_once()
-        self.assertEqual(dev.write.call_args[0][0][3], fwl.ALL_LEDS_ON)
+        mock_hid = MagicMock()
+        fwl.apply_led_action(mock_hid, 42, fwl.LED_BLINK_ON, 0, 0, 0)
+        mock_hid.write.assert_called_once()
+        self.assertEqual(mock_hid.write.call_args[0][1][3], fwl.ALL_LEDS_ON)
 
     def test_led_normal_sends_computed_bitmask(self):
-        dev = MagicMock()
-        fwl.apply_led_action(dev, fwl.LED_NORMAL, 8000.0, 5600.0, 8000.0)
-        dev.write.assert_called_once()
-        # At max RPM all LEDs should be on
-        self.assertEqual(dev.write.call_args[0][0][3], fwl.ALL_LEDS_ON)
+        mock_hid = MagicMock()
+        fwl.apply_led_action(mock_hid, 42, fwl.LED_NORMAL, 8000.0, 5600.0, 8000.0)
+        mock_hid.write.assert_called_once()
+        self.assertEqual(mock_hid.write.call_args[0][1][3], fwl.ALL_LEDS_ON)
 
 
 # ---------------------------------------------------------------------------
@@ -322,14 +307,11 @@ class TestApplyLedAction(unittest.TestCase):
 class TestMain(unittest.TestCase):
 
     def _run_main(self, packets, wheel_found=True, hid_available=True):
-        mock_dev = MagicMock()
         mock_hid = MagicMock()
         if wheel_found:
-            mock_hid.device.return_value = mock_dev
+            mock_hid.open.return_value = 99  # fake handle
         else:
-            mock_dev_fail = MagicMock()
-            mock_dev_fail.open.side_effect = OSError("not found")
-            mock_hid.device.return_value = mock_dev_fail
+            mock_hid.open.side_effect = OSError("not found")
 
         mock_sock = MagicMock()
         recv_iter = iter(packets)
@@ -344,8 +326,6 @@ class TestMain(unittest.TestCase):
             return item, ("127.0.0.1", 5607)
 
         mock_sock.recvfrom.side_effect = fake_recvfrom
-
-        hid_import = mock_hid if hid_available else None
 
         def fake_import(name, *args, **kwargs):
             if name == "hid":
@@ -363,46 +343,12 @@ class TestMain(unittest.TestCase):
              patch("builtins.__import__", side_effect=fake_import):
             fwl.main()
 
-        return mock_dev
+        return mock_hid
 
-    def test_main_frozen_patches_path(self):
-        """When sys.frozen is set, sys._MEIPASS is prepended to PATH."""
-        pkt = _pack_packet(is_race_on=1, max_rpm=8000, current_rpm=5000,
-                           raw_size=323)
-
-        mock_hid = MagicMock()
-        mock_sock = MagicMock()
-        recv_iter = iter([pkt])
-
-        def fake_recvfrom(_):
-            try:
-                return next(recv_iter), ("127.0.0.1", 5607)
-            except StopIteration:
-                raise KeyboardInterrupt
-
-        mock_sock.recvfrom.side_effect = fake_recvfrom
-
-        original_import = __builtins__.__import__ if hasattr(__builtins__, "__import__") else __import__
-
-        def fake_import(name, *args, **kwargs):
-            if name == "hid":
-                return mock_hid
-            return original_import(name, *args, **kwargs)
-
-        import os
-        original_path = os.environ.get("PATH", "")
-
-        with patch("socket.socket", return_value=mock_sock), \
-             patch("time.sleep", return_value=None), \
-             patch("time.time", return_value=100.0), \
-             patch("builtins.input"), \
-             patch("builtins.__import__", side_effect=fake_import), \
-             patch.object(sys, "frozen", True, create=True), \
-             patch.object(sys, "_MEIPASS", "/fake/meipass", create=True):
-            fwl.main()
-
-        # PATH should have been patched (then restored by process exit, but we
-        # just verify the frozen branch was executed without error)
+    def test_main_hid_not_installed(self):
+        """ImportError on 'hid' → sys.exit(1)."""
+        with self.assertRaises(SystemExit):
+            self._run_main([], hid_available=False)
 
     def test_main_normal_race(self):
         pkt = _pack_packet(is_race_on=1, max_rpm=8000, current_rpm=5000,
@@ -444,6 +390,15 @@ class TestMain(unittest.TestCase):
                            raw_size=323)
         self._run_main([bad, pkt])
 
+    def test_main_no_wheel_on_start(self):
+        pkt = _pack_packet(is_race_on=1, max_rpm=8000, current_rpm=5000,
+                           raw_size=323)
+        self._run_main([pkt], wheel_found=False)
+
+    def test_main_max_rpm_zero_no_wheel(self):
+        pkt = _pack_packet(is_race_on=1, max_rpm=0, current_rpm=0, raw_size=323)
+        self._run_main([pkt], wheel_found=False)
+
     def test_main_game_detected_printed_once(self):
         pkt = _pack_packet(is_race_on=1, max_rpm=8000, current_rpm=5000,
                            raw_size=323)
@@ -454,35 +409,24 @@ class TestMain(unittest.TestCase):
         pkt2 = _pack_packet(raw_size=331)
         self._run_main([pkt1, pkt2])
 
-    def test_main_no_wheel_on_start(self):
-        """Wheel not plugged in at start → dev is None, LEDs skipped."""
-        pkt = _pack_packet(is_race_on=1, max_rpm=8000, current_rpm=5000,
-                           raw_size=323)
-        self._run_main([pkt], wheel_found=False)
-
     def test_main_wheel_reconnects_during_loop(self):
-        """dev starts None (startup fails), wheel found on first packet retry."""
+        """handle starts None (startup fails), wheel found on first packet retry."""
         pkt = _pack_packet(is_race_on=1, max_rpm=8000, current_rpm=5000,
                            raw_size=323)
 
         mock_hid = MagicMock()
-        # open_wheel tries WHEEL_PIDS in order; each call to hid.device() returns a new obj.
-        # Startup: both PIDs fail → open_wheel returns None.
-        # Loop retry: first PID succeeds → open_wheel returns dev_ok.
-        dev_fail1 = MagicMock(); dev_fail1.open.side_effect = OSError("nf")
-        dev_fail2 = MagicMock(); dev_fail2.open.side_effect = OSError("nf")
-        dev_ok    = MagicMock()  # .open succeeds by default
-        mock_hid.device.side_effect = [dev_fail1, dev_fail2, dev_ok]
+        # Startup: both PIDs fail → open_wheel returns None
+        # Loop retry: first PID succeeds → handle = 99
+        mock_hid.open.side_effect = [OSError("nf"), OSError("nf"), 99]
 
         mock_sock = MagicMock()
         recv_iter = iter([pkt])
 
         def fake_recvfrom(_):
             try:
-                item = next(recv_iter)
+                return next(recv_iter), ("127.0.0.1", 5607)
             except StopIteration:
                 raise KeyboardInterrupt
-            return item, ("127.0.0.1", 5607)
 
         mock_sock.recvfrom.side_effect = fake_recvfrom
 
@@ -500,26 +444,14 @@ class TestMain(unittest.TestCase):
              patch("builtins.__import__", side_effect=fake_import):
             fwl.main()
 
-        # LED report sent after reconnect confirms line 347 was reached
-        dev_ok.write.assert_called()
-
-    def test_main_max_rpm_zero_no_wheel(self):
-        """max_rpm=0 with no wheel — LEDs skip gracefully."""
-        pkt = _pack_packet(is_race_on=1, max_rpm=0, current_rpm=0, raw_size=323)
-        self._run_main([pkt], wheel_found=False)
-
-    def test_main_hid_not_installed(self):
-        """ImportError on 'hid' → sys.exit(1)."""
-        with self.assertRaises(SystemExit):
-            self._run_main([], hid_available=False)
+        mock_hid.write.assert_called()
 
     def test_main_finally_handles_errors(self):
-        """Cover except-pass branches in finally when dev/sock calls raise."""
-        mock_dev = MagicMock()
-        mock_dev.write.side_effect = Exception("write error")
-        mock_dev.close.side_effect = Exception("close error")
+        """Cover except-pass branches in finally when handle/sock calls raise."""
         mock_hid = MagicMock()
-        mock_hid.device.return_value = mock_dev
+        mock_hid.open.return_value = 99
+        mock_hid.write.side_effect = Exception("write error")
+        mock_hid.close.side_effect = Exception("close error")
 
         mock_sock = MagicMock()
         mock_sock.recvfrom.side_effect = KeyboardInterrupt

@@ -8,7 +8,7 @@ Supported wheels: Logitech G29, G920 (direct USB HID — no G HUB required)
 
 Requirements:
   - Python 3.8+  (not needed if using the .exe release)
-  - hid package  (pip install hid)  — bundled in the .exe release
+  - hidapi package  (pip install hidapi)  — bundled in the .exe release
 
 In-game setup (all supported Forza titles):
   Settings > HUD and Gameplay  (or Gameplay & HUD)
@@ -17,7 +17,6 @@ In-game setup (all supported Forza titles):
     Data Out IP Port     : 5607
 """
 
-import os
 import socket
 import struct
 import sys
@@ -74,24 +73,24 @@ ALL_LEDS_OFF = 0x00
 def open_wheel(hid_module):
     """
     Try to open the first recognised Logitech wheel via USB HID.
-    Returns an open hid.device() or None if no supported wheel is found.
+    Returns an open device handle (int) or None if no supported wheel is found.
+
+    Uses the cython-hidapi API: hid.open(vid, pid) returns an integer handle.
     """
     for pid in WHEEL_PIDS:
         try:
-            dev = hid_module.device()
-            dev.open(LOGITECH_VID, pid)
-            dev.set_nonblocking(1)
-            return dev
+            handle = hid_module.open(LOGITECH_VID, pid)
+            return handle
         except OSError:
             continue
     return None
 
 
-def _send_led_report(dev, bitmask: int) -> None:
+def _send_led_report(hid_module, handle, bitmask: int) -> None:
     """Write a 7-byte LED control output report to the HID device."""
-    # hidapi on Windows prepends a 0x00 report-ID byte automatically.
-    report = [0x00] + _HID_LED_PREFIX + [bitmask & 0xFF] + _HID_LED_SUFFIX
-    dev.write(report)
+    # cython-hidapi: hid.write(handle, data) — data is bytes, first byte is report ID.
+    report = bytes([0x00, 0xF8, 0x12, bitmask & 0xFF, 0x00, 0x00, 0x00, 0x00])
+    hid_module.write(handle, report)
 
 
 def rpm_to_bitmask(current_rpm: float, min_rpm: float, max_rpm: float) -> int:
@@ -257,15 +256,15 @@ def compute_led_state(
 # HID LED APPLICATION
 # ---------------------------------------------------------------------------
 
-def apply_led_action(dev, action: str, current_rpm: float, min_rpm: float, max_rpm: float) -> None:
+def apply_led_action(hid_module, handle, action: str, current_rpm: float, min_rpm: float, max_rpm: float) -> None:
     """Apply a LED action (returned by compute_led_state) to the wheel via HID."""
     if action == LED_OFF or action == LED_BLINK_OFF:
-        _send_led_report(dev, ALL_LEDS_OFF)
+        _send_led_report(hid_module, handle, ALL_LEDS_OFF)
     elif action == LED_BLINK_ON:
-        _send_led_report(dev, ALL_LEDS_ON)
+        _send_led_report(hid_module, handle, ALL_LEDS_ON)
     else:  # LED_NORMAL
         bitmask = rpm_to_bitmask(current_rpm, min_rpm, max_rpm)
-        _send_led_report(dev, bitmask)
+        _send_led_report(hid_module, handle, bitmask)
 
 
 # ---------------------------------------------------------------------------
@@ -284,24 +283,17 @@ def main() -> None:
     print()
 
     # --- HID wheel ---
-    # When running as a PyInstaller .exe, hidapi.dll is extracted to sys._MEIPASS.
-    # We must add that directory to PATH before importing hid, otherwise the
-    # ctypes-based hid package cannot find the DLL at import time.
-    if getattr(sys, "frozen", False):
-        meipass = sys._MEIPASS  # type: ignore[attr-defined]
-        os.environ["PATH"] = meipass + os.pathsep + os.environ.get("PATH", "")
-
     try:
         import hid as hid_module
     except ImportError:
-        print("[ERROR] 'hid' package not found.")
-        print("        Install it with:  pip install hid")
+        print("[ERROR] 'hidapi' package not found.")
+        print("        Install it with:  pip install hidapi")
         print()
         input("  Press Enter to close this window …")
         sys.exit(1)
 
-    dev = open_wheel(hid_module)
-    if dev is None:
+    handle = open_wheel(hid_module)
+    if handle is None:
         print("[WARN] No supported Logitech wheel detected (G29 / G920).")
         print("       Make sure the wheel is plugged in via USB.")
         print("       LEDs will not work until the wheel is connected.")
@@ -349,14 +341,14 @@ def main() -> None:
                 print(f"\n[INFO] Game detected: {packet['game']}")
                 last_game = packet["game"]
 
-            if dev is None:
-                dev = open_wheel(hid_module)
-                if dev is not None:
+            if handle is None:
+                handle = open_wheel(hid_module)
+                if handle is not None:
                     print("\n[OK]   Logitech wheel connected via USB HID.")
 
             if packet["max_rpm"] <= 0:
-                if dev is not None:
-                    apply_led_action(dev, LED_OFF, 0, 0, 0)
+                if handle is not None:
+                    apply_led_action(hid_module, handle, LED_OFF, 0, 0, 0)
                 print("  In menu — LEDs off …                   ", end="\r")
                 continue
 
@@ -373,8 +365,8 @@ def main() -> None:
                 blink_interval = blink_interval,
             )
 
-            if dev is not None:
-                apply_led_action(dev, action, packet["current_rpm"], min_rpm, packet["max_rpm"])
+            if handle is not None:
+                apply_led_action(hid_module, handle, action, packet["current_rpm"], min_rpm, packet["max_rpm"])
 
             blink_str = " *** REDLINE ***" if action in (LED_BLINK_ON, LED_BLINK_OFF) else ""
             gear_str  = "R" if packet["gear"] == 0 else str(packet["gear"])
@@ -389,9 +381,9 @@ def main() -> None:
         print("\n[INFO] Shutting down …")
     finally:
         try:
-            if dev is not None:
-                _send_led_report(dev, ALL_LEDS_OFF)
-                dev.close()
+            if handle is not None:
+                _send_led_report(hid_module, handle, ALL_LEDS_OFF)
+                hid_module.close(handle)
         except Exception:
             pass
         try:

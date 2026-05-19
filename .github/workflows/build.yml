@@ -32,7 +32,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install test dependencies
-        run: pip install pytest pytest-cov hidapi
+        run: pip install pytest pytest-cov hidapiapi
 
       - name: Run tests with coverage
         run: python -m pytest tests/ -v
@@ -55,18 +55,10 @@ jobs:
           python-version: "3.11"
 
       - name: Install build dependencies
-        run: pip install pyinstaller hid
-
-      - name: Download hidapi.dll
-        shell: pwsh
-        run: |
-          $url = "https://github.com/libusb/hidapi/releases/download/hidapi-0.14.0/hidapi-win.zip"
-          Invoke-WebRequest -Uri $url -OutFile hidapi-win.zip
-          Expand-Archive -Path hidapi-win.zip -DestinationPath hidapi-win
-          Copy-Item hidapi-win\x64\hidapi.dll .
+        run: pip install pyinstaller hidapi
 
       - name: Build .exe
-        run: pyinstaller --onefile --console --name forza_wheel_leds --hidden-import hid --add-binary "hidapi.dll;." forza_wheel_leds.py
+        run: pyinstaller --onefile --console --name forza_wheel_leds forza_wheel_leds.py
 
       - name: Create release archive
         shell: pwsh
