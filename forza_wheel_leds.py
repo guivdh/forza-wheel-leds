@@ -33,7 +33,9 @@ UDP_PORT = 5607       # Must match the port set in-game
 UDP_IP   = "0.0.0.0" # Listen on all interfaces (127.0.0.1 also works)
 
 # Fraction of max RPM at which the FIRST LED lights up.
-LED_MIN_RPM_RATIO = 0.70
+#   0.50 → first LED at 50 % of redline  (recommended — all 5 LEDs visible)
+#   0.70 → first LED at 70 % of redline  (shift-indicator feel)
+LED_MIN_RPM_RATIO = 0.50
 
 # Rev-limiter blink: LEDs flash when RPM exceeds this fraction of max RPM.
 BLINK_RPM_RATIO = 0.97
@@ -271,7 +273,7 @@ def main() -> None:
     print("=" * 58)
     print("  forza-wheel-leds  |  Logitech G29 / G920 RPM LEDs")
     print("=" * 58)
-    print(f"  Version        : 1.2.0")
+    print(f"  Version        : 1.2.3")
     print(f"  Listening on   : {UDP_IP}:{UDP_PORT}")
     print(f"  LED min RPM    : {int(LED_MIN_RPM_RATIO * 100)} % of redline")
     print(f"  Blink at       : {int(BLINK_RPM_RATIO * 100)} % of redline  ({BLINK_HZ:.0f} Hz)")
