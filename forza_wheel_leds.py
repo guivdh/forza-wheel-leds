@@ -332,16 +332,21 @@ def main() -> None:
     blink_phase    = False
     last_blink     = 0.0
     blink_interval = 1.0 / BLINK_HZ
+    packets_received = 0
 
     try:
         while True:
             try:
-                data, _ = sock.recvfrom(2048)
+                data, addr = sock.recvfrom(2048)
             except socket.timeout:
                 continue
 
+            packets_received += 1
+
             packet = patch_and_parse(data)
             if packet is None:
+                print(f"  [UDP] Packet received from {addr[0]}:{addr[1]} "
+                      f"— size {len(data)} bytes (unrecognised format)   ", end="\r")
                 continue
 
             # Announce game change
