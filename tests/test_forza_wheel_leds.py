@@ -364,7 +364,8 @@ class TestMain(unittest.TestCase):
         with patch("ctypes.CDLL", return_value=mock_dll), \
              patch("socket.socket", return_value=mock_sock), \
              patch("time.sleep"), \
-             patch("time.time", return_value=100.0):
+             patch("time.time", return_value=100.0), \
+             patch("builtins.input"):
             fwl.main()
 
         return mock_dll

@@ -264,16 +264,26 @@ def apply_led_action(dll: ctypes.CDLL, action: str, current_rpm: float, min_rpm:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    print("=" * 54)
-    print("  forza-wheel-leds  |  Logitech G920/G29 RPM LEDs")
-    print("=" * 54)
+    print("=" * 58)
+    print("  forza-wheel-leds  |  Logitech G29 / G920 RPM LEDs")
+    print("=" * 58)
+    print(f"  Version        : 1.0.5")
+    print(f"  Listening on   : {UDP_IP}:{UDP_PORT}")
+    print(f"  LED min RPM    : {int(LED_MIN_RPM_RATIO * 100)} % of redline")
+    print(f"  Blink at       : {int(BLINK_RPM_RATIO * 100)} % of redline  ({BLINK_HZ:.0f} Hz)")
+    print(f"  Wheel index    : {WHEEL_INDEX}")
+    print("=" * 58)
+    print()
 
     # --- Logitech SDK ---
     dll = load_logitech_sdk()
+    print("[OK]   Logitech DLL loaded.")
 
     if not dll.LogiSteeringInitialize(False):
         print("[WARN] LogiSteeringInitialize returned False.")
         print("       Make sure Logitech G HUB is installed and running.")
+    else:
+        print("[OK]   Logitech G HUB connection established.")
 
     time.sleep(0.5)  # Give the SDK a moment to enumerate devices
 
@@ -281,16 +291,24 @@ def main() -> None:
         print(f"[WARN] No Logitech wheel detected at index {WHEEL_INDEX}.")
         print("       LEDs will activate once a wheel is connected.")
     else:
-        print("[INFO] Logitech wheel connected.")
+        print(f"[OK]   Wheel detected at index {WHEEL_INDEX}.")
 
     # --- UDP socket ---
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind((UDP_IP, UDP_PORT))
     sock.settimeout(1.0)
 
-    print(f"[INFO] Listening for Forza telemetry on UDP port {UDP_PORT} …")
-    print("[INFO] In-game: Settings > HUD and Gameplay > Data Out : ON")
-    print("[INFO] Press Ctrl+C to quit.\n")
+    print()
+    print(f"[OK]   UDP socket bound to {UDP_IP}:{UDP_PORT}")
+    print()
+    print("  In-game setup (do once per Forza title):")
+    print("    Settings > HUD and Gameplay > Data Out : ON")
+    print(f"    Data Out IP Address : 127.0.0.1")
+    print(f"    Data Out IP Port    : {UDP_PORT}")
+    print()
+    print("  Waiting for Forza telemetry …")
+    print("  Close this window (or press Ctrl+C) to stop.")
+    print()
 
     last_game      = ""
     blink_phase    = False
@@ -315,7 +333,7 @@ def main() -> None:
 
             if packet["max_rpm"] <= 0:
                 apply_led_action(dll, LED_OFF, 0, 0, 0)
-                print("  Waiting for telemetry …               ", end="\r")
+                print("  In menu — LEDs off …                   ", end="\r")
                 continue
 
             min_rpm      = packet["max_rpm"] * LED_MIN_RPM_RATIO
@@ -348,7 +366,9 @@ def main() -> None:
         apply_led_action(dll, LED_OFF, 0, 0, 0)
         dll.LogiSteeringShutdown()
         sock.close()
-        print("[INFO] Done.")
+        print("[INFO] LEDs off. Socket closed.")
+        print()
+        input("  Press Enter to close this window …")
 
 
 if __name__ == "__main__":  # pragma: no cover
