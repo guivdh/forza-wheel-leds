@@ -58,7 +58,7 @@ jobs:
         run: pip install pyinstaller hid
 
       - name: Build .exe
-        run: pyinstaller --onefile --console --name forza_wheel_leds forza_wheel_leds.py
+        run: pyinstaller --onefile --console --name forza_wheel_leds --hidden-import hid forza_wheel_leds.py
 
       - name: Create release archive
         shell: pwsh
