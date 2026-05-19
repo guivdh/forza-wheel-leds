@@ -32,7 +32,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install test dependencies
-        run: pip install pytest pytest-cov hidapiapi
+        run: pip install pytest pytest-cov hidapi
 
       - name: Run tests with coverage
         run: python -m pytest tests/ -v
