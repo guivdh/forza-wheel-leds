@@ -99,7 +99,9 @@ def load_config(path: str) -> dict:
 LOGITECH_VID = 0x046D
 WHEEL_PIDS = [
     0xC24F,  # G29 (PC / PS3 mode)
-    0xC262,  # G920
+    0xC262,  # G920,
+    0xC26E,  # G923 (XBOX / PC)
+    0xC266,  # G923 (PS / PC)
 ]
 
 NUM_LEDS     = 5
@@ -376,7 +378,7 @@ def main() -> None:
     # --- Open wheel ---
     handle = open_wheel(lib)
     if handle is None:
-        print("[WARN] No supported Logitech wheel detected (G29 / G920).")
+        print("[WARN] No supported Logitech wheel detected (G29 / G920 / G923).")
         print("       Make sure the wheel is plugged in via USB.")
         print("       LEDs will activate once the wheel is connected.")
         print()
