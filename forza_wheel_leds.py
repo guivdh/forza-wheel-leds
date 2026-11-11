@@ -108,6 +108,30 @@ NUM_LEDS     = 5
 ALL_LEDS_ON  = (1 << NUM_LEDS) - 1   # 0x1F
 ALL_LEDS_OFF = 0x00
 
+# The LED command must go to the wheel's game-controller interface
+# (HID usage page 0x01, Generic Desktop). With G HUB installed, the G29
+# also exposes vendor-defined interfaces (usage page 0xFF00) that reject it.
+GENERIC_DESKTOP_USAGE_PAGE = 0x01
+
+
+class HidDeviceInfo(ctypes.Structure):
+    """Leading fields of hidapi's struct hid_device_info (stable since 0.10)."""
+
+
+HidDeviceInfo._fields_ = [
+    ("path",                ctypes.c_char_p),
+    ("vendor_id",           ctypes.c_ushort),
+    ("product_id",          ctypes.c_ushort),
+    ("serial_number",       ctypes.c_wchar_p),
+    ("release_number",      ctypes.c_ushort),
+    ("manufacturer_string", ctypes.c_wchar_p),
+    ("product_string",      ctypes.c_wchar_p),
+    ("usage_page",          ctypes.c_ushort),
+    ("usage",               ctypes.c_ushort),
+    ("interface_number",    ctypes.c_int),
+    ("next",                ctypes.POINTER(HidDeviceInfo)),
+]
+
 
 def _hidapi_dll_path() -> str:
     """
@@ -144,6 +168,18 @@ def load_hidapi() -> ctypes.CDLL:
     lib.hid_open.restype  = ctypes.c_void_p
     lib.hid_open.argtypes = [ctypes.c_ushort, ctypes.c_ushort, ctypes.c_wchar_p]
 
+    # hid_enumerate(vendor_id, product_id) → hid_device_info* (linked list)
+    lib.hid_enumerate.restype  = ctypes.c_void_p
+    lib.hid_enumerate.argtypes = [ctypes.c_ushort, ctypes.c_ushort]
+
+    # hid_free_enumeration(devs) → void
+    lib.hid_free_enumeration.restype  = None
+    lib.hid_free_enumeration.argtypes = [ctypes.c_void_p]
+
+    # hid_open_path(path) → hid_device*
+    lib.hid_open_path.restype  = ctypes.c_void_p
+    lib.hid_open_path.argtypes = [ctypes.c_char_p]
+
     # hid_close(device) → void
     lib.hid_close.restype  = None
     lib.hid_close.argtypes = [ctypes.c_void_p]
@@ -156,12 +192,43 @@ def load_hidapi() -> ctypes.CDLL:
     return lib
 
 
+def _find_controller_path(lib: ctypes.CDLL, pid: int):
+    """
+    Return the HID path of the wheel's game-controller interface, or None.
+
+    hid_open() opens whichever interface hidapi enumerates first. On a G29
+    with G HUB installed that is a vendor-defined interface, and the LED
+    report written to it is silently rejected (issue #4).
+    """
+    head = lib.hid_enumerate(LOGITECH_VID, pid)
+    if not isinstance(head, int) or not head:
+        return None
+    path = None
+    try:
+        node = ctypes.cast(head, ctypes.POINTER(HidDeviceInfo))
+        while node:
+            info = node.contents
+            if info.usage_page == GENERIC_DESKTOP_USAGE_PAGE:
+                path = info.path
+                break
+            node = info.next
+    finally:
+        lib.hid_free_enumeration(head)
+    return path
+
+
 def open_wheel(lib: ctypes.CDLL):
     """
     Try to open the first recognised Logitech wheel.
+    Prefers the game-controller interface; falls back to hid_open().
     Returns a non-NULL c_void_p handle, or None if no wheel found.
     """
     for pid in WHEEL_PIDS:
+        path = _find_controller_path(lib, pid)
+        if path:
+            handle = lib.hid_open_path(path)
+            if handle:
+                return handle
         handle = lib.hid_open(LOGITECH_VID, pid, None)
         if handle:
             return handle

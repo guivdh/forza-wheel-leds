@@ -6,6 +6,7 @@ hidapi.dll is mocked via ctypes.CDLL.
 """
 
 import configparser
+import ctypes
 import os
 import socket
 import struct
@@ -378,6 +379,58 @@ class TestOpenWheel(unittest.TestCase):
         self.assertIsNone(result)
 
 
+def _device_list(*usage_pages):
+    """Build a real hid_device_info linked list; returns (nodes, head address)."""
+    nodes = [fwl.HidDeviceInfo() for _ in usage_pages]
+    for i, (node, page) in enumerate(zip(nodes, usage_pages)):
+        node.path = f"path-{i}".encode()
+        node.usage_page = page
+        if i + 1 < len(nodes):
+            node.next = ctypes.pointer(nodes[i + 1])
+    return nodes, ctypes.addressof(nodes[0])
+
+
+class TestOpenWheelInterfaceSelection(unittest.TestCase):
+    """G29 with G HUB exposes vendor interfaces before the game controller (#4)."""
+
+    def test_opens_game_controller_interface_by_path(self):
+        nodes, head = _device_list(0xFF00, 0xFF00, 0x01)
+        lib = MagicMock()
+        lib.hid_enumerate.return_value = head
+        lib.hid_open_path.return_value = 0xCAFE
+        result = fwl.open_wheel(lib)
+        self.assertEqual(result, 0xCAFE)
+        lib.hid_open_path.assert_called_once_with(b"path-2")
+        lib.hid_open.assert_not_called()
+        lib.hid_free_enumeration.assert_called_once_with(head)
+
+    def test_falls_back_to_hid_open_without_controller_interface(self):
+        nodes, head = _device_list(0xFF00)
+        lib = MagicMock()
+        lib.hid_enumerate.return_value = head
+        lib.hid_open.return_value = 0xDEAD
+        result = fwl.open_wheel(lib)
+        self.assertEqual(result, 0xDEAD)
+        lib.hid_open_path.assert_not_called()
+        lib.hid_free_enumeration.assert_called_once_with(head)
+
+    def test_falls_back_to_hid_open_when_open_path_fails(self):
+        nodes, head = _device_list(0x01)
+        lib = MagicMock()
+        lib.hid_enumerate.return_value = head
+        lib.hid_open_path.return_value = None
+        lib.hid_open.return_value = 0xBEEF
+        result = fwl.open_wheel(lib)
+        self.assertEqual(result, 0xBEEF)
+
+    def test_falls_back_to_hid_open_when_enumeration_empty(self):
+        lib = MagicMock()
+        lib.hid_enumerate.return_value = None
+        lib.hid_open.return_value = 0xDEAD
+        self.assertEqual(fwl.open_wheel(lib), 0xDEAD)
+        lib.hid_free_enumeration.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # Tests: _send_led_report
 # ---------------------------------------------------------------------------
@@ -657,7 +710,7 @@ class TestMain(unittest.TestCase):
         lib = MagicMock()
         # Startup: all PIDs return None → open_wheel returns None
         # Loop retry: first PID returns a valid handle
-        lib.hid_open.side_effect = [None, None, 0xDEAD]
+        lib.hid_open.side_effect = [None] * len(fwl.WHEEL_PIDS) + [0xDEAD]
 
         mock_sock = MagicMock()
         recv_iter = iter([pkt])
